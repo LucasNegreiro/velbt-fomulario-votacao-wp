@@ -1,0 +1,54 @@
+.meu-formulario {
+  background-color: #f9f9f9;
+  padding: 20px;
+  border: 1px solid #e5e5e5;
+  border-radius: 5px;
+  max-width: 400px;
+  margin: 20px auto;
+}
+
+.meu-formulario .form-row {
+  margin-bottom: 15px;
+}
+
+.meu-formulario label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+.meu-formulario .mensagem {
+  color: red;
+  font-weight: bold;
+}
+
+/* Estilo para o item de seleção do form de votação*/
+  .select2-result-repository {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    flex-direction: row;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    padding: 4px;
+  }
+
+  /* Estilo para a imagem */
+  .select2-result-repository img {
+    max-width: 50px; /* ou a largura que você deseja */
+    height: auto; /* mantém a proporção da imagem */
+    object-fit: cover; /* faz com que a imagem cubra completamente o contêiner, mantendo suas proporções */
+    border-radius: 5px; /* opcional, para tornar os cantos da imagem arredondados */
+    margin-right: 8px;
+  }
+
+
+  /* Estilo para o título */
+  .select2-result-repository__title {
+    margin: 0;
+  }
+
+  /* Efeito de hover */
+  .select2-result-repository:hover {
+    background-color: #f0f0f0;
+  }
