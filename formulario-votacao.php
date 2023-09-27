@@ -1,8 +1,8 @@
 <?php
 /*
-Plugin Name: Votacao Aciur
+Plugin Name: Velbeet Formulário Votação
 Description: Formulário de votação para validar o CPF.
-Version: 1.1
+Version: 1.2
 Author: Velbeet
 */
 
@@ -27,7 +27,7 @@ function validaCPF($cpf) {
 
 register_activation_hook(__FILE__, 'criar_tabelas_votacao');
 
-function meu_formulario_votacao_scripts() {
+function velbt_formulario_votacao_scripts() {
     // Add JQuery Mascara
     wp_enqueue_script('jquery-mask', 'https://cdnjs.cloudflare.com/ajax/libs/jquery.mask/1.14.16/jquery.mask.min.js', array('jquery'), '1.14.16', true);
     wp_add_inline_script('jquery-mask', '
@@ -63,7 +63,7 @@ function meu_formulario_votacao_scripts() {
     wp_add_inline_script('jquery', $validation_script);
 }
 
-add_action('wp_enqueue_scripts', 'meu_formulario_votacao_scripts');
+add_action('wp_enqueue_scripts', 'velbt_formulario_votacao_scripts');
 
 add_action('wp_ajax_buscar_empresas', 'buscar_empresas_callback');
 add_action('wp_ajax_nopriv_buscar_empresas', 'buscar_empresas_callback');
@@ -106,7 +106,7 @@ function buscar_empresas_callback() {
 
 
 
-function meu_formulario_votacao_shortcode() {
+function velbt_formulario_votacao_shortcode() {
     global $wpdb;
     $mensagem = '';
     
@@ -285,4 +285,4 @@ function meu_formulario_votacao_shortcode() {
     return ob_get_clean();
 }
 
-add_shortcode('meu_formulario_votacao', 'meu_formulario_votacao_shortcode');
+add_shortcode('velbt_formulario_votacao', 'velbt_formulario_votacao_shortcode');
