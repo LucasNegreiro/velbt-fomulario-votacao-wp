@@ -40,25 +40,9 @@ function velbt_formulario_votacao_scripts() {
     // Add o css do arquivo css do plugin
     wp_enqueue_style('meu-formulario-votacao-styles', plugin_dir_url(__FILE__) . 'styles.css');
 
-    // Adiciona o script e o CSS do Select2
-    wp_enqueue_script('select2', 'https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js', array('jquery'), '4.0.13', true);
-    wp_enqueue_style('select2', 'https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css');
-    
+
     // Adiciona CSS do Jquery
     wp_enqueue_style('jquery-ui', 'https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css');
-
-
-    $validation_script = <<<EOD
-        jQuery(document).ready(function($) {
-            $('.wp-form').on('submit', function(e) {
-                var empresaId = $('#empresa_id').val();
-                if (!empresaId) {
-                    e.preventDefault();
-                    alert('Por favor, selecione uma empresa existente da lista!');
-                }
-            });
-        });
-    EOD;
 
     wp_add_inline_script('jquery', $validation_script);
 }
@@ -102,6 +86,22 @@ function buscar_empresas_callback() {
     wp_die();
 }
 
+// Busca o CPF se já está cadastrado pelo PHP
+
+add_action('wp_ajax_verificar_cpf', 'verificar_cpf_callback');
+add_action('wp_ajax_nopriv_verificar_cpf', 'verificar_cpf_callback');
+
+function verificar_cpf_callback() {
+    global $wpdb;
+
+    $cpf = sanitize_text_field($_POST['cpf']);
+
+    $table_name = $wpdb->prefix . 'velbt_votacao';
+    $cpf_existente = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $table_name WHERE cpf = %s", $cpf));
+
+    echo json_encode(['cpf_existente' => $cpf_existente > 0]);
+    wp_die();
+}
 
 
 
@@ -109,13 +109,21 @@ function buscar_empresas_callback() {
 function velbt_formulario_votacao_shortcode() {
     global $wpdb;
     $mensagem = '';
+    $mensagemOk = '';
+    
     
     if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $nome = sanitize_text_field($_POST['nome']);
         $cpf = sanitize_text_field($_POST['cpf']);
         $whatsapp = sanitize_text_field($_POST['whatsapp']);
         $empresa_id = intval($_POST['empresa_id']);
-        
+
+            
+        // Obtendo o nome da empresa baseado no ID
+        $table_name_empresa = $wpdb->prefix . 'velbt_empresa_votacao';
+        $empresa = $wpdb->get_row($wpdb->prepare("SELECT nome FROM $table_name_empresa WHERE id = %d", $empresa_id));
+        $nome_empresa = $empresa ? $empresa->nome : '';
+            
         // Verificar se todos os campos foram preenchidos
         if (empty($nome)) {
             $mensagem = 'Por favor, preencha o campo nome!';
@@ -138,11 +146,13 @@ function velbt_formulario_votacao_shortcode() {
                         'nome' => $nome,
                         'cpf' => $cpf,
                         'whatsapp' => $whatsapp,
-                        'empresa_id' => $empresa_id
+                        'empresa_id' => $empresa_id,
+                        'nome_empresa' => $nome_empresa  
                     ),
                     array('%s', '%s', '%s', '%d')
                 );
-                $mensagem = 'Votação enviada com sucesso, obrigado por participar!';
+                $mensagemOk = 'Votação enviada com sucesso, obrigado por participar!';
+                $mensagem = '';
             }
         }
     }
@@ -150,139 +160,249 @@ function velbt_formulario_votacao_shortcode() {
     ob_start();
     ?>
     <div class="meu-formulario">
+        <p class="mensagem-ok"><?php echo $mensagemOk; ?></p>
         <form action="" method="post" class="wp-form">
             <div class="form-row">
-                <label for="nome">Nome:</label>
+                <label for="nome">Nome:
+                   <i class="info-icon" title="Insira seu nome completo."></i>
+                </label>
                 <input type="text" name="nome" id="nome" class="regular-text" required>
+                <span class="error-message" id="nomeError"></span>
             </div>
             <div class="form-row">
-                <label for="cpf">CPF:</label>
+                <label for="cpf">CPF:
+                    <i class="info-icon" title="Insira seu número de CPF no formato 999.999.999-99."></i>
+                </label>
                 <input type="text" name="cpf" id="cpf" pattern="\d{3}\.\d{3}\.\d{3}-\d{2}" class="regular-text" required title="Formato: 999.999.999-99">
+                <span class="error-message" id="cpfError"></span>
             </div>
             <div class="form-row">
-                <label for="whatsapp">Whatsapp:</label>
+                <label for="whatsapp">Whatsapp:
+                    <i class="info-icon" title="Digite as três primeiras letras do nome da empresa para buscar na lista."></i>
+                </label>
                 <input type="text" name="whatsapp" id="whatsapp" pattern="\(\d{2}\) \d{1} \d{4}-\d{4}" class="regular-text" required title="Formato: (99) 9 9999-9999">
+                <span class="error-message" id="whatsappError"></span>
             </div>
-            <div class="form-row">            
-                <label for="empresa_nome">Empresa:</label>
-                <select id="empresa_nome" name="empresa_nome" style="width: 100%;"></select>
-                <input type="hidden" name="empresa_id" id="empresa_id">
+         
+            
+            <div class="form-row empresa-seletor">
+                <label for="empresa">Escolha a empresa:
+                    <i class="info-icon" title="Digite as três primeiras letras do nome da empresa para buscar na lista."></i>
+                </label>
+
+                <div class="custom-select">
+                    <input type="text" id="empresa" placeholder="Digite para buscar uma empresa" />
+                    <ul></ul>
+                    <div id="loading" style="display: none;">Carregando...</div> <!-- Adicionado indicador de carregamento -->
+                    <input type="hidden" name="empresa_id" id="empresa_id">
+                </div>
+
+                <span class="error-message" id="empresaError"></span>
+
             </div>
-            <div class="form-row">            
-                <div id="selectedEmpresa" class="selected-empresa"></div> <!-- Adicionado um novo elemento para mostrar a empresa selecionada -->
+
+            <div class="form-row empresa-selecionada" style="display: none;">
+                <label>Empresa Selecionada:</label>
+                <div id="empresa-info">
+                    <!-- As informações da empresa selecionada serão inseridas aqui -->
+                </div>
+                <button type="button" id="refazer-voto">Refazer Voto</button>
             </div>
+
             <div class="form-row">
-                <input type="submit" value="Enviar" class="button button-primary">
+                <input type="submit" value="Votar" class="button button-primary">
+            </div>
+
+            <!-- Popup Confirmacao -->
+            <div id="reviewModal" class="modal">
+                <div class="modal-content">
+                    <span class="close">&times;</span>
+                    <h2>Revisar Informações</h2>
+                    <p>Nome: <span id="reviewNome"></span></p>
+                    <p>CPF: <span id="reviewCPF"></span></p>
+                    <p>Whatsapp: <span id="reviewWhatsapp"></span></p>
+                    <p>Empresa: <span id="reviewEmpresa"></span></p>
+                    <button type="button" id="confirmVote">Confirmar Voto</button>
+                </div>
             </div>
         </form>
         <p class="mensagem"><?php echo $mensagem; ?></p>
     </div>
+
     <script>
         jQuery(document).ready(function($) {
-            console.log('Documento pronto');
+            var $customSelect = $('.custom-select');
+            var $input = $customSelect.find('input').first();
+            var $ul = $customSelect.find('ul');
+            var $loading = $('#loading');
+            var $empresaSelecionada = $('.empresa-selecionada');
+            var $empresaSeletor = $('.empresa-seletor');
+            var $empresaInfo = $('#empresa-info');
+            var $modal = $('#reviewModal');
+            var $span = $('.close');
 
-            var $empresaNome = $('#empresa_nome');
-
-            console.log('Elemento #empresa_nome encontrado:', $empresaNome.length > 0);
-
-            if ($.fn.select2) {
-                console.log('Select2 está disponível');
-
-                $empresaNome.select2({
-                    language: {
-                        errorLoading: function () {
-                            return 'Os resultados não puderam ser carregados.';
-                        },
-                        inputTooLong: function (args) {
-                            var overChars = args.input.length - args.maximum;
-                            return 'Por favor, apague ' + overChars + ' letras';
-                        },
-                        inputTooShort: function (args) {
-                            var remainingChars = args.minimum - args.input.length;
-                            return 'Por favor, insira ' + remainingChars + ' ou mais letras';
-                        },
-                        loadingMore: function () {
-                            return 'Carregando mais resultados…';
-                        },
-                        maximumSelected: function (args) {
-                            return 'Você só pode selecionar ' + args.maximum + ' empresa';
-                        },
-                        noResults: function () {
-                            return 'Nenhum resultado encontrado';
-                        },
-                        searching: function () {
-                            return 'Buscando…';
-                        }
-                    },
-                    placeholder: 'Selecione uma empresa',
-                    ajax: {
+            $input.on('input', function() {
+                var term = $input.val();
+                if(term.length >= 3) {
+                    $loading.show();
+                    $.ajax({
                         url: '<?php echo admin_url('admin-ajax.php'); ?>',
-                        dataType: 'json',
-                        delay: 250,
-                        data: function (params) {
-                            return {
-                                action: 'buscar_empresas',
-                                term: params.term || '',
-                                page: params.page || 1
-                            };
+                        data: {
+                            action: 'buscar_empresas',
+                            term: term
                         },
-                        processResults: function (data) {
-                            return {
-                                results: data.results,
-                                pagination: {
-                                    more: data.results.length === 10
-                                }
-                            };
+                        dataType: 'json',
+                        success: function(data) {
+                            $ul.empty();
+                            if(data.results.length > 0) {
+                                data.results.forEach(function(empresa) {
+                                    var $li = $('<li data-value="' + empresa.value + '">' +
+                                                '<img src="' + empresa.logo + '" alt="' + empresa.label + '" />' +
+                                                empresa.label +
+                                                '</li>');
+                                    $ul.append($li);
+                                });
+                            } else {
+                                $ul.append('<li>Nenhuma empresa encontrada</li>');
+                            }
+                            $ul.show();
+                        },
+                        complete: function() {
+                            $loading.hide();
                         }
-                    },
-                    escapeMarkup: function (markup) { return markup; },
-                    minimumInputLength: 1,
-                    templateResult: formatRepo,
-                    templateSelection: formatRepoSelection
-                });
-
-                if ($empresaNome.data('select2')) {
-                    console.log('Select2 foi inicializado');
-
-                    $empresaNome[0].addEventListener('change', function(e) {
-                        console.log('Evento change disparado no elemento DOM');
-                        console.log('Objeto do evento:', e);
                     });
-
-                    $empresaNome.on('select2:select', function (e) {
-                        console.log('Evento select2:select disparado');
-                        var data = e.params.data;
-                        console.log('Dados selecionados:', data);
-                    });
-                } else {
-                    console.log('Select2 não foi inicializado');
                 }
-            } else {
-                console.log('Select2 não está disponível');
+            });
+
+            function validaCPFScript(cpf) {
+                if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) {
+                    return false;
+                }
+
+                var add = 0;
+                for (var i = 0; i < 9; i++) {
+                    add += parseInt(cpf[i]) * (10 - i);
+                }
+
+                var rev = 11 - (add % 11);
+                if (rev === 10 || rev === 11) {
+                    rev = 0;
+                }
+
+                if (rev !== parseInt(cpf[9])) {
+                    return false;
+                }
+
+                add = 0;
+                for (var i = 0; i < 10; i++) {
+                    add += parseInt(cpf[i]) * (11 - i);
+                }
+
+                rev = 11 - (add % 11);
+                if (rev === 10 || rev === 11) {
+                    rev = 0;
+                }
+
+                return rev === parseInt(cpf[10]);
             }
 
-            
+            $ul.on('click', 'li', function() {
+                var label = $(this).text().trim();
+                var value = $(this).data('value');
+                var logo = $(this).find('img').attr('src');
+                $input.val(label);
+                $('#empresa_id').val(value);
+                $ul.hide();
 
+                $empresaInfo.html('<img src="' + logo + '" alt="' + label + '" /><span>' + label + '</span>');
+                $empresaSeletor.hide();
+                $empresaSelecionada.show();
+            });
 
-            function formatRepo(repo) {
-                if (repo.loading) return repo.text;
-                var markup = "<div class='select2-result-repository clearfix'>" +
-                    "<img src='" + repo.logo + "' width='30' height='30' />" +
-                    "<div class='select2-result-repository__title'>" + repo.label + "</div></div>";
-                return markup;
-            }
+            $('#refazer-voto').on('click', function() {
+                $empresaSelecionada.hide();
+                $empresaSeletor.show();
+                $input.val('');
+                $('#empresa_id').val('');
+            });
 
-            function formatRepoSelection(repo) {
-                return repo.label || repo.text;
-            }
+            $('.wp-form').on('submit', function(e) {  
+                e.preventDefault();
+
+                var nome = $('#nome').val().trim();
+                var cpf = $('#cpf').val().replace(/[^\d]/g, '');
+                var whatsapp = $('#whatsapp').val().trim();
+                var empresa_id = $('#empresa_id').val();
+
+                // Limpa mensagens de erro anteriores
+                $('.error-message').text('');
+
+                if (!nome) {
+                    $('#nomeError').text('Por favor, preencha o campo nome.');
+                    return;
+                }
+
+                if (!cpf || !validaCPFScript(cpf)) {
+                    $('#cpfError').text('CPF inválido! Por favor, insira um CPF válido.');
+                    return;
+                }
+
+                if (!whatsapp) {
+                    $('#whatsappError').text('Por favor, preencha o campo Whatsapp.');
+                    return;
+                }
+
+                if (!empresa_id) {
+                    $('#empresaError').text('Por favor, selecione uma empresa da lista.');
+                    return;
+                }
+
+                // Verifica se o CPF já foi usado
+                $.ajax({
+                    url: '<?php echo admin_url('admin-ajax.php'); ?>',
+                    method: 'POST',
+                    data: {
+                        action: 'verificar_cpf',
+                        cpf: cpf
+                    },
+                    dataType: 'json',
+                    success: function(data) {
+                        if (data.cpf_existente) {
+                            $('#cpfError').text('Este CPF já foi usado para votar.');
+                        } else {
+                            $('#reviewNome').text(nome);
+                            $('#reviewCPF').text(cpf);
+                            $('#reviewWhatsapp').text(whatsapp);
+                            $('#reviewEmpresa').text($('#empresa').val());
+
+                            $modal.show();
+                        }
+                    }
+                });
+            });
+
+            $('#confirmVote').click(function() {
+             
+                $('.wp-form')[0].submit();
+
+            });
+
+            $span.click(function() {
+                $modal.hide();
+            });
+
+            $(window).click(function(event) {
+                if (event.target == $modal[0]) {
+                    $modal.hide();
+                }
+            });
         });
     </script>
-
-
 
 
     <?php
     return ob_get_clean();
 }
+
 
 add_shortcode('velbt_formulario_votacao', 'velbt_formulario_votacao_shortcode');
